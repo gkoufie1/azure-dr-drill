@@ -65,6 +65,23 @@ the full lab. It took three tries, and each error was different:
 
 The failed jobs remain visible in the vault's Site Recovery jobs history.
 
+## Screenshots (captured 2026-09-25, during the canary)
+
+Subscription IDs, IPs and network IDs are blacked out. One small thing is
+not: the cache storage account is named `stdrdrill4638880d2d`, which contains
+the first 10 characters of the subscription ID. That was reviewed and accepted
+for these images; later builds derive the name from a hash instead.
+
+| File | What it shows |
+|---|---|
+| `vault-overview-2-failed-jobs.png` | The Recovery Services vault in Central US, with **2 failed jobs** in the last 24 hours — the two failed enable-replication attempts (NVMe/OS, then kernel). The tile only counts failed, in-progress and waiting jobs, so the successful third attempt doesn't appear on it; the full history is under Site Recovery jobs. |
+| `vault-overview.png` | The vault's landing page, with the Backup and Site Recovery entry points. |
+| `resource-group-westus-a.png`, `resource-group-westus-b.png` | The West US resource group: the VM, its NIC, public IP, OS disk, NSG, VNet and the ASR cache storage account. Two captures of the same resource set. |
+| `resource-group-centralus.png` | The Central US resource group: the vault, VNet and NSG — the recovery side, empty of VMs until a failover. |
+| `vnet-source-westus.png` | The source virtual network (`10.10.0.0/16`, address space redacted), tagged `ManagedBy: terraform`. |
+| `nsg-target-centralus.png` | The target NSG: **no custom rules**, so only Azure's default rules apply and inbound internet traffic is denied. |
+| `vm-web-ubuntu2404-april-image.png` | The lab VM, running, created 2026-09-25 8:43 PM UTC from the pinned April Ubuntu 24.04 image (`Standard_D2als_v7`, 2 vCPU / 4 GiB). The portal doesn't show the running kernel; that was confirmed separately with `uname -r` (6.17.0-1011 on this image, then 6.14.0-1017 after the kernel pin). |
+
 ## Layout
 
 ```
