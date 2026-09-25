@@ -67,3 +67,19 @@ Disable replication and destroy the stack, then verify against Azure directly
 (not just the command's exit code) that both resource groups are empty and the
 vault is gone. The drill's evidence — timestamps, job history, results — lives
 in this repo; the resources do not need to.
+
+## Notes from drill 001 (added after the run; the targets above are unchanged)
+
+- **The recovered VM is not named like the source.** A real failover named it
+  after the replication item (`replication-drdrill-web`); the test failover
+  named its VM `<source>-test`. The monitor script polled a guessed name, so
+  the "3 consecutive external health checks" condition never ran. Look the
+  VM up from the vault instead of assuming a name.
+- **Set source shutdown to `Required` on the real failover** (the portal's
+  "shut down machine before beginning failover" box). Drill 001 left it
+  `NotRequired`, the job skipped "Synchronizing the latest changes", and the
+  recovered data was as old as the newest recovery point (5 minutes) rather
+  than the replication stream (about 2 minutes). Untested hypothesis; see
+  `docs/asr-drill-001-results.md`.
+- Recovery points arrive every 5 minutes, so a 5-minute RPO target leaves
+  almost no margin unless the latest changes are synchronized first.

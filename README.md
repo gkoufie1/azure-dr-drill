@@ -11,11 +11,14 @@ published as measured, teardown verified against the cloud directly.
 2. **Azure SQL failover group** — force a failover under live traffic and
    measure both RTO *and* RPO (the AWS drill measured RTO only).
 
-**Status:** in progress. The ASR canary is deployed and replicating (health
-Normal, initial replication in progress at the time of writing) after three
-attempts, each of which failed for a different documented reason — see below.
-The failover drills themselves have **not** run yet, so there are no RTO/RPO
-numbers in this repo yet, and none are claimed.
+**Status:** in progress. **ASR drill 001 has run** (2026-09-25, West US to
+Central US, one VM): **RTO 2 min 34 s against a 15-minute target — met**,
+though measured from the recovered VM's own log rather than by the
+runbook's external health checks; **RPO 304 s against a 5-minute target —
+missed by 4 seconds**. Both targets were committed before the run. Full
+timeline, caveats and the likely cause of the miss are in
+[`docs/asr-drill-001-results.md`](docs/asr-drill-001-results.md). Still ahead:
+teardown, and the Azure SQL failover group drill.
 
 ## Constraints found on the way (all checked against the live subscription)
 
