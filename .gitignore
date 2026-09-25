@@ -1,0 +1,21 @@
+# Terraform
+**/.terraform/
+tfplan
+*.tfplan
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars
+*.auto.tfvars
+
+# Keys / secrets — public keys only are ever referenced by path
+*.pem
+*_rsa
+id_*
+!*.pub
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
