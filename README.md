@@ -11,8 +11,11 @@ published as measured, teardown verified against the cloud directly.
 2. **Azure SQL failover group** — force a failover under live traffic and
    measure both RTO *and* RPO (the AWS drill measured RTO only).
 
-**Status:** in progress. Nothing is deployed yet — this commit is the
-scaffold and its first plan (21 resources, not yet applied).
+**Status:** in progress. The ASR canary is deployed and replicating (health
+Normal, initial replication in progress at the time of writing) after three
+attempts, each of which failed for a different documented reason — see below.
+The failover drills themselves have **not** run yet, so there are no RTO/RPO
+numbers in this repo yet, and none are claimed.
 
 ## Constraints found on the way (all checked against the live subscription)
 
@@ -33,6 +36,34 @@ quota per region), which shaped the design before a single resource existed:
 - **Recovery Services vault soft delete can't be turned off.** An earlier draft
   tried to disable it to simplify teardown; the provider rejects that as a
   required security feature. Corrected in `asr.tf`.
+
+## Three attempts to enable ASR replication (what actually broke)
+
+A one-VM canary existed to answer "will ASR accept this VM?" before building
+the full lab. It took three tries, and each error was different:
+
+1. **Error 151273 — NVMe + Ubuntu 22.04.** The v7 VM sizes use an NVMe disk
+   controller, and ASR only supports NVMe with certain guest operating
+   systems: RHEL 9.0-9.7, Ubuntu 24.04 LTS, SLES 15 SP4-SP7 (Microsoft's ASR
+   support matrix). Fixed by moving to Ubuntu 24.04. (A fallback to a SCSI
+   disk controller was considered and ruled out: `Standard_D2als_v7` reports
+   `DiskControllerTypes = NVMe` only.)
+2. **Error 151141 — kernel not supported by the agent.** With 24.04, the OS
+   check passed, but ASR rejected the running kernel, `6.17.0-1022-azure`.
+   Kernel support is tracked per Mobility-agent build in the
+   `Azure/Azure-SiteRecovery` GitHub repo. The build this vault installed
+   (9.67.7789.1, published 2026-05-04) tops out at `6.14.0-1017-azure` for
+   Ubuntu 24.04; the first build that lists 6.17.0-1022 is 7893 (2026-08-13).
+   An older marketplace image did **not** help — the April 2026 image already
+   ran 6.17 — so the fix was installing the supported 6.14.0-1017 kernel,
+   making GRUB boot it, and turning off automatic updates. (`pinned_kernel`
+   in `variables.tf`; cloud-init in `compute.tf`.)
+3. **A leftover failed record.** The second attempt got far enough to create
+   a replication record in `EnablingFailed` state, which made the third
+   `terraform apply` fail with "already exists — needs to be imported."
+   Removed with ASR's disable-replication call, then applied cleanly.
+
+The failed jobs remain visible in the vault's Site Recovery jobs history.
 
 ## Layout
 

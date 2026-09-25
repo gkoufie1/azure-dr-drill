@@ -52,6 +52,18 @@ variable "vm_names" {
   default     = ["web"]
 }
 
+variable "ubuntu_image_version" {
+  description = "Pinned Ubuntu 24.04 marketplace image version, for reproducibility. It does not determine ASR kernel support (even this April image ships kernel 6.17) — see pinned_kernel."
+  type        = string
+  default     = "24.04.202604160"
+}
+
+variable "pinned_kernel" {
+  description = "Kernel the VM boots. Must be in ASR's supported list for the Mobility agent build the vault installs (9.67.7789.1 supports Ubuntu 24.04 kernels up to 6.14.0-1017-azure; list lives in Azure/Azure-SiteRecovery on GitHub under MobilityAgent/AzureToAzure/SupportedKernels). Confirm with `uname -r` before enabling replication."
+  type        = string
+  default     = "6.14.0-1017-azure"
+}
+
 variable "admin_username" {
   type    = string
   default = "azureuser"
