@@ -10,9 +10,9 @@ over for real, and timed. The lab infrastructure was built with Terraform (the r
 and the failover calls were done by hand or by REST) on an Azure Free Trial subscription, which turned out to
 shape the design more than anything else.
 
-> **Status as of 2026-09-25 (evening):** ASR drill 001 is done. **The lab resources are still running;
-> teardown and the second drill (Azure SQL failover group) have not happened yet.** Steps 13 and 14
-> say so plainly and will be updated when they do.
+> **Status as of 2026-09-25 (night):** ASR drill 001 is done, **and the lab has been torn down and
+> verified empty** (Step 13). The second drill (Azure SQL failover group) has **not** been done
+> (Step 14). The real cost figure isn't in yet, because Azure's billing data lags about a day.
 
 ## Results at a glance
 
@@ -41,7 +41,7 @@ The full timeline, the caveats and the likely cause of the RPO miss are in
 12. [Step 10: Clean up the test failover](#step-10-clean-up-the-test-failover)
 13. [Step 11: The real failover](#step-11-the-real-failover)
 14. [Step 12: What the numbers say](#step-12-what-the-numbers-say)
-15. [Step 13: Teardown (not done yet)](#step-13-teardown-not-done-yet)
+15. [Step 13: Teardown](#step-13-teardown)
 16. [Step 14: Azure SQL failover group drill (not started)](#step-14-azure-sql-failover-group-drill-not-started)
 17. [Every resource created](#every-resource-created)
 18. [Problems hit and how each was solved](#problems-hit-and-how-each-was-solved)
@@ -404,19 +404,48 @@ Timeline, derivation, all caveats and the per-step timings are in
 
 ---
 
-## Step 13: Teardown (not done yet)
+## Step 13: Teardown
 
-**Status:** **not done.** As of this writing the lab resources are still running.
+**Status:** **done and verified, 2026-09-25, about 10 minutes** (23:22 to 23:33 UTC). It did not go to plan on
+the first try; that is recorded below.
 
-**Plan, and why each part:**
+**What was done, and why each part:**
 
-1. Delete the **recovered VM, NIC and disk** manually. They were created by ASR's failover, so Terraform's state
-   does not know them and `terraform destroy` will not remove them.
-2. **Disable replication and `terraform destroy`** the rest.
-3. **Verify against Azure directly** (resource lists for both groups, the vault gone), not only the command's exit code.
-4. Capture the **cost screenshot the day after**: Azure's cost data lags about a day.
+1. **Snapshot first,** then a `terraform plan -destroy` (**0 to add, 0 to change, 21 to destroy**), so the
+   destroy was reviewed before it ran.
+2. **Delete the recovered VM, NIC and disk by hand.** ASR's failover created them, so Terraform's state does not
+   know them and `terraform destroy` would never remove them.
+3. **`terraform destroy`.** The NSG associations and both NSGs went cleanly. Then it **failed** on the replication record:
 
-This section will be updated with what actually happened, including anything that didn't go to plan.
+   > **Error 150144:** the source VM is `deallocated`. *"Disable replication requires action within the VM,
+   > which thus requires the VM to be in 'running' power status."*
+
+   ASR has to remove its agent from *inside* the source VM, so **the source VM must be running to disable
+   replication.** I had deallocated it to simulate the outage in Step 11. **Fix:** start the source VM, wait for
+   its agent to be Ready, re-plan (**17 left to destroy**, exactly as expected), and destroy again.
+4. **Verify against Azure directly,** not the command's exit code:
+
+| Check | Result |
+|---|---|
+| Resources in `rg-dr-drill-westus` and `rg-dr-drill-centralus` | **0 and 0** |
+| Resources tagged `Project=azure-dr-drill`, anywhere | **none** |
+| VMs, disks, public IPs, NICs, subscription-wide | **0, 0, 0, 0** |
+| The vault, by direct request | **Not Found** |
+| Terraform state | **empty** |
+
+**One false alarm, worth knowing about:** right after the destroy, `az resource list` still showed the vault, even
+though Terraform said it was gone. A direct request for the vault returned *Not Found*: the list index lags behind
+deletions. Trust the direct request, and re-check the list a minute later.
+
+**What was deliberately kept:** the two **empty** resource groups (free; the Azure SQL drill would reuse them) and
+the **$10 budget** with its alerts (also free, and it is the guardrail).
+
+**Left behind by Azure itself:** `NetworkWatcherRG` holds a Network Watcher per region. Azure creates these
+automatically when a virtual network exists, and two of them appeared because of this project's VNets. They are
+free, and they are not deleted here.
+
+**Still to do:** capture the **cost screenshot the day after** (Cost Management → Cost analysis). Azure's cost data
+lags about a day, so the real cost is not in this README yet.
 
 ---
 
@@ -430,6 +459,9 @@ West US and Central US on this subscription, which is one reason those regions w
 ---
 
 ## Every resource created
+
+> **All of the resources below were deleted on 2026-09-25 (Step 13) and verified gone.** They are listed as a
+> record of what was built and why.
 
 **By Terraform, 21 resources (all in `terraform/asr-lab`):**
 
@@ -463,7 +495,7 @@ West US and Central US on this subscription, which is one reason those regions w
 |---|---|---|
 | `osdisk-drdrill-web-ASRReplica` | Central US | The continuously updated replica of the OS disk |
 | Test-failover VM `vm-drdrill-web-test` + NIC + disk | Central US | Step 9. **Deleted in Step 10** |
-| Recovered VM `replication-drdrill-web` + NIC + disk | Central US | Step 11. **Still exists**; removed in teardown |
+| Recovered VM `replication-drdrill-web` + NIC + disk | Central US | Step 11. **Deleted by hand in Step 13** |
 
 **Created by hand / CLI:**
 
@@ -495,6 +527,8 @@ their contents.
 | Recovered VM "not found" for 15 minutes | Script assumed the VM's name | ASR names it after the replication item; look it up, don't guess |
 | Screenshot instructions gave the wrong VM name | Same wrong assumption | Corrected mid-drill; noted in the results |
 | **RPO missed by 4 s** | Recovery point 5 min old; latest-changes sync step skipped | Hypothesis: source shutdown `Required`; untested |
+| **Teardown failed: ASR error 150144** | Disabling replication needs the *source* VM running (ASR removes its agent from inside it); I had left it deallocated after the drill | Start the source VM, wait for the agent, re-plan and destroy again. Add "start the source VM" to any future teardown |
+| The vault still listed after it was deleted | Azure's resource list index lags behind deletions | A direct request returned *Not Found*; verify with a direct request, not the list |
 
 ---
 
@@ -533,6 +567,10 @@ initial copy). The failover calls are REST requests shown in Steps 9 and 11.
 
 Local state is used on purpose: this is a single-operator lab torn down after each session.
 
+**Tearing down:** delete anything ASR created by hand first (a recovered VM, its NIC and disk), **make sure the
+source VM is running** (ASR cannot disable replication on a deallocated VM, Step 13), then
+`terraform plan -destroy` and `terraform destroy`, and verify with direct requests.
+
 ---
 
 ## What this does not show
@@ -544,6 +582,8 @@ Local state is used on purpose: this is a single-operator lab torn down after ea
 - **The RPO target was missed,** and the cause is a hypothesis, not a finding.
 - **The cloud-init kernel pin is untested on a fresh build.**
 - **No Azure SQL results exist yet.**
+- **The real cost is not in yet.** The figures above are estimates from published prices; Azure's billing data lags
+  about a day.
 - **The recovery side has no explicit outbound path,** which a production DR design would add.
 
 ---

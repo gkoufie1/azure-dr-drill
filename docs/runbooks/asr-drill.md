@@ -83,3 +83,15 @@ in this repo; the resources do not need to.
   `docs/asr-drill-001-results.md`.
 - Recovery points arrive every 5 minutes, so a 5-minute RPO target leaves
   almost no margin unless the latest changes are synchronized first.
+
+## Teardown note from drill 001
+
+- **Start the source VM before disabling replication.** Drill 001 left it
+  deallocated (that was the simulated outage), and the destroy failed with
+  ASR error 150144: disabling replication requires the source VM to be running,
+  because ASR removes its agent from inside the VM. Start it, wait for the
+  agent to be Ready, then destroy.
+- Delete the recovered VM, its NIC and its disk by hand first; ASR created them,
+  so Terraform's state doesn't know them.
+- Verify with direct requests, not `az resource list`, which can still show a
+  deleted vault for a minute or so.
