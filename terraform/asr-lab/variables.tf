@@ -32,9 +32,18 @@ variable "target_rg_name" {
 }
 
 variable "vm_size" {
-  description = "Must be unrestricted in BOTH regions for this subscription. Older sizes (B1s, B2s, D2s_v3, DS1_v2) are NotAvailableForSubscription on this Free Trial; D2ds_v7 is open in both."
+  description = <<-EOT
+    Must be unrestricted in BOTH regions for this subscription. Older sizes
+    (B1s, B2s, D2s_v3, DS1_v2) are NotAvailableForSubscription on this Free
+    Trial. Eight 2-vCPU v7 sizes are open in both West US and Central US;
+    published West US Linux prices per hour: D2als_v7 $0.094, D2as_v7 $0.107,
+    D2alds_v7 $0.112, D2ads_v7 $0.134, D2ls_v7 $0.153, D2s_v7 $0.173,
+    D2lds_v7 $0.174, D2ds_v7 $0.213. The cheapest is plenty for a lab VM (4 GB
+    RAM, no temp disk); the plan originally used D2ds_v7 at more than twice
+    the price before the comparison was made.
+  EOT
   type        = string
-  default     = "Standard_D2ds_v7"
+  default     = "Standard_D2als_v7"
 }
 
 variable "vm_names" {
