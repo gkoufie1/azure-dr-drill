@@ -437,6 +437,8 @@ the first try; that is recorded below.
 though Terraform said it was gone. A direct request for the vault returned *Not Found*: the list index lags behind
 deletions. Trust the direct request, and re-check the list a minute later.
 
+![The two resource groups that remain after teardown (emptiness is shown by the verification table above, not by this image)](screenshots/resource-groups-after-teardown.png)
+
 **What was deliberately kept:** the two **empty** resource groups (free; the Azure SQL drill would reuse them) and
 the **$10 budget** with its alerts (also free, and it is the guardrail).
 
