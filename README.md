@@ -10,9 +10,9 @@ over for real, and timed. The lab infrastructure was built with Terraform (the r
 and the failover calls were done by hand or by REST) on an Azure Free Trial subscription, which turned out to
 shape the design more than anything else.
 
-> **Status as of 2026-09-25 (night):** ASR drill 001 is done, **and the lab has been torn down and
-> verified empty** (Step 13). The second drill (Azure SQL failover group) has **not** been done
-> (Step 14). The real cost figure isn't in yet, because Azure's billing data lags about a day.
+> **Status as of 2026-09-26:** ASR drill 001 is done, **the lab has been torn down and verified empty**
+> (Step 13), and the **real cost is in: $0.37 for the whole month** (see [Cost](#cost)). The second drill
+> (Azure SQL failover group) has **not** been done (Step 14).
 
 ## Results at a glance
 
@@ -446,8 +446,8 @@ the **$10 budget** with its alerts (also free, and it is the guardrail).
 automatically when a virtual network exists, and two of them appeared because of this project's VNets. They are
 free, and they are not deleted here.
 
-**Still to do:** capture the **cost screenshot the day after** (Cost Management → Cost analysis). Azure's cost data
-lags about a day, so the real cost is not in this README yet.
+**Cost, checked the next day:** Azure's billing data lags about a day, so the real figure was read on 2026-09-26.
+It is in the [Cost](#cost) section: **$0.37**.
 
 ---
 
@@ -545,8 +545,31 @@ their contents.
 | ASR, VM replicated to Azure | $25 / month per protected VM (a free first 31 days has been offered; not confirmed here) |
 
 **Guardrails:** the $10/month budget alerts at 50/80/100%, and the trial's spending limit means the subscription
-cannot be billed for real. Cost is estimated from those rates against runtimes, not from Azure's billing data,
-which lags about a day. The real figure will be added here after teardown.
+cannot be billed for real.
+
+**What it actually cost (read from the billing account on 2026-09-26, the day after teardown):**
+
+| Line on the billing summary | Amount |
+|---|---|
+| Virtual Machines, Dalsv7 series (two line items) | $0.24 + $0.07 |
+| Standard SSD managed disks | $0.02 |
+| Other purchases (not itemized on this screen) | $0.04 |
+| **Total for September 2026** | **$0.37 of the $200 trial credit** |
+
+![Billing summary: top products by charges and credits remaining](screenshots/cost-billing-summary.png)
+
+*The screenshot is cropped to the products and credit cards; the account name is not shown.*
+
+How to read that number honestly:
+
+- **It is the whole September bill for the billing account, not only this project.** The day before, Cost analysis
+  showed under $0.01 for the older resources in the subscription (storage, Key Vault, from Sep 13), so nearly all of
+  the $0.37 is this drill. I did not separate it further.
+- **The VM lines are the bulk (about $0.31).** That is roughly three VM-hours at the $0.0944/hour rate above; I have
+  not broken it down per VM.
+- **I do not know what "Other purchases" ($0.04) is.** It may include ASR or networking, but this screen does not
+  say, so I make no claim.
+- **Late-posting usage could add a little.** The trial credit shows $199.63 remaining as of the read.
 
 ---
 
@@ -584,8 +607,8 @@ source VM is running** (ASR cannot disable replication on a deallocated VM, Step
 - **The RPO target was missed,** and the cause is a hypothesis, not a finding.
 - **The cloud-init kernel pin is untested on a fresh build.**
 - **No Azure SQL results exist yet.**
-- **The real cost is not in yet.** The figures above are estimates from published prices; Azure's billing data lags
-  about a day.
+- **The cost figure is a billing-account total** ($0.37 for September), not a per-resource breakdown, and part of
+  it ("Other purchases", $0.04) is unidentified.
 - **The recovery side has no explicit outbound path,** which a production DR design would add.
 
 ---
