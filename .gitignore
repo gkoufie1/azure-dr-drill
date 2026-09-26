@@ -23,3 +23,7 @@ Thumbs.db
 # SQL lab: generated admin password never leaves the machine
 .sql-admin-password
 **/.sql-admin-password
+
+# Python
+__pycache__/
+*.pyc
