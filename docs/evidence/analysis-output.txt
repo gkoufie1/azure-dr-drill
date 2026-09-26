@@ -1,0 +1,24 @@
+# Planned failover West US -> Central US (command issued 2026-09-26T17:23:01.471Z; log cut at 17:33:13.284Z, when the forced failover was issued)
+acknowledged rows in CSV : 5838
+acked but MISSING (lost) : 0
+FAIL events after issue  : 3   (total FAILs in file: 3)
+last ACK before outage   : 2026-09-26T17:23:10.563000+00:00
+first FAIL               : 2026-09-26T17:23:10.681000+00:00  (9.2s after issue)
+last FAIL                : 2026-09-26T17:23:13.578000+00:00
+first ACK after outage   : 2026-09-26T17:23:17.235000+00:00
+OUTAGE WINDOW (client)   : 6.67 s
+RTO (issue -> first ACK) : 15.76 s
+first error text         : (0, b'Unknown error')
+
+# Forced failover Central US -> West US, --allow-data-loss (command issued 2026-09-26T17:33:13.284Z)
+acknowledged rows in CSV : 6248
+acked but MISSING (lost) : 21  seq 13787..13807
+FAIL events after issue  : 1   (total FAILs in file: 4)
+last ACK before outage   : 2026-09-26T17:33:21.002000+00:00
+first FAIL               : 2026-09-26T17:33:24.018000+00:00  (10.7s after issue)
+last FAIL                : 2026-09-26T17:33:24.018000+00:00
+first ACK after outage   : 2026-09-26T17:33:26.185000+00:00
+OUTAGE WINDOW (client)   : 5.18 s
+RTO (issue -> first ACK) : 12.90 s
+first error text         : no response within 3s (worker killed)
+RPO window (acked but lost, client clock): about 2.32 s

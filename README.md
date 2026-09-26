@@ -5,14 +5,18 @@ A real disaster-recovery drill on Azure, built and measured the same way as the 
 **before** the drill, a real failover, results published **as measured** (including the miss), and
 every mistake recorded instead of smoothed over.
 
-A Linux VM in **West US** was replicated to **Central US** with **Azure Site Recovery (ASR)**, failed
-over for real, and timed. The lab infrastructure was built with Terraform (the resource groups, the budget
-and the failover calls were done by hand or by REST) on an Azure Free Trial subscription, which turned out to
-shape the design more than anything else.
+Two drills, both run for real and timed:
 
-> **Status as of 2026-09-26:** ASR drill 001 is done, **the lab has been torn down and verified empty**
-> (Step 13), and the **real cost is in: $0.37 for the whole month** (see [Cost](#cost)). The second drill
-> (Azure SQL failover group) has **not** been done (Step 14).
+1. A Linux VM in **West US** replicated to **Central US** with **Azure Site Recovery (ASR)**, failed over and measured (Steps 1 to 13).
+2. An **Azure SQL failover group** between the same two regions, failed over under a live write load, with both
+   recovery time and data loss measured (Step 14).
+
+The infrastructure was built with Terraform (the resource groups, the budget and the ASR failover calls were done
+by hand or by REST) on an Azure Free Trial subscription, which turned out to shape the design more than anything else.
+
+> **Status as of 2026-09-26:** both drills are done and **both labs have been torn down and verified gone**.
+> The ASR drill's real cost is in ($0.37 for the month, see [Cost](#cost)); the SQL drill's cost is an estimate
+> (about $0.04) until billing data catches up.
 
 ## Results at a glance
 
@@ -24,6 +28,18 @@ shape the design more than anything else.
 Targets were pushed in commit [`64dfe3d`](https://github.com/gkoufie1/azure-dr-drill/commit/64dfe3d) before any failover ran.
 The full timeline, the caveats and the likely cause of the RPO miss are in
 [`docs/asr-drill-001-results.md`](docs/asr-drill-001-results.md).
+
+**Azure SQL failover group (drill 001, forced failover under load):**
+
+| | Target (committed before the run) | Measured | Result |
+|---|---|---|---|
+| **RTO** | 60 seconds | **12.90 s** command to first write back (client outage **5.18 s**) | **Met** |
+| **RPO** | 5 seconds (my own choice) | **21 rows lost, about 2.3 s of writes** | **Met** |
+| Planned failover | 0 rows lost | **0 rows lost**, outage **6.67 s** | **Met** (a correctness check) |
+
+Targets were pushed in commit [`2720ae5`](https://github.com/gkoufie1/azure-dr-drill/commit/2720ae5) before any resource existed.
+The measuring tool failed twice before it worked; both failures and one analysis mistake are recorded in
+[`docs/sql-drill-001-results.md`](docs/sql-drill-001-results.md).
 
 ## Contents
 
@@ -42,7 +58,7 @@ The full timeline, the caveats and the likely cause of the RPO miss are in
 13. [Step 11: The real failover](#step-11-the-real-failover)
 14. [Step 12: What the numbers say](#step-12-what-the-numbers-say)
 15. [Step 13: Teardown](#step-13-teardown)
-16. [Step 14: Azure SQL failover group drill (not started)](#step-14-azure-sql-failover-group-drill-not-started)
+16. [Step 14: Azure SQL failover group drill](#step-14-azure-sql-failover-group-drill)
 17. [Every resource created](#every-resource-created)
 18. [Problems hit and how each was solved](#problems-hit-and-how-each-was-solved)
 19. [Cost](#cost)
@@ -67,7 +83,7 @@ and RPO (how much data is lost), not just "I read about Site Recovery".
 6. Publish what was measured, met or missed, with the cause.
 7. Tear down and verify against Azure directly, not just trust a command's exit code.
 
-Two drills were planned: **ASR (VM failover)**, done, and an **Azure SQL failover group**, not started.
+Two drills were planned and both were run: **ASR (VM failover)** and an **Azure SQL failover group**.
 
 ## 2. Architecture
 
@@ -451,19 +467,80 @@ It is in the [Cost](#cost) section: **$0.37**.
 
 ---
 
-## Step 14: Azure SQL failover group drill (not started)
+## Step 14: Azure SQL failover group drill
 
-The second planned drill: two Azure SQL servers with a **failover group**, live traffic writing timestamped rows,
-a forced failover, and both RTO **and RPO** measured (the AWS drill measured RTO only). It is available in
-West US and Central US on this subscription, which is one reason those regions were chosen.
-**No SQL resources exist and no results are claimed.**
+**Status:** **done, measured and torn down on 2026-09-26** (about 1 hour of billable time). Full results:
+[`docs/sql-drill-001-results.md`](docs/sql-drill-001-results.md). Procedure and the pre-committed targets:
+[`docs/runbooks/sql-failover-drill.md`](docs/runbooks/sql-failover-drill.md).
+
+**What was built (Terraform, `terraform/sql-lab`, 9 resources):** two SQL logical servers (West US primary, Central US
+secondary), one Standard S0 database, one **failover group** with a customer-managed policy, two firewall rules that
+allow only the machine running the write load, and a generated admin password kept in a gitignored file and never
+printed. The failover group creates the geo-secondary database itself, so that secondary is **not** in Terraform
+state; teardown has to remove the replication link by hand.
+
+**Why a failover group and not plain geo-replication:** it adds a **read-write listener**, a DNS name that always points
+at the current primary, so the application's connection string does not change across a failover. That is the whole point
+of the feature and it is what the write load exercised.
+
+**Targets, committed before anything existed:** RTO **60 s** (Microsoft documents failover groups as "typically less than
+60 seconds") and RPO **5 s** (my own number, since Microsoft documents RPO only as "equal to or greater than 0").
+
+![Resource group in West US holding the SQL server and database](screenshots/sql-rg-westus-resources.png)
+
+![The primary SQL server in West US](screenshots/sql-server-westus-overview.png)
+
+![The secondary SQL server in Central US](screenshots/sql-server-centralus-overview.png)
+
+**The drill.** A writer inserts a numbered, timestamped row about every 100 ms through the listener and logs every
+outcome. Then, in order:
+
+1. **Before:** West US is primary.
+
+   ![Failover group before any failover: West US is primary](screenshots/sql-fog-before-west-primary.png)
+
+2. **Planned failover to Central US** (Azure synchronizes first). **0 rows lost, outage 6.67 s.**
+
+   ![After the planned failover: Central US is primary](screenshots/sql-fog-after-planned-central-primary.png)
+
+3. **Forced failover back to West US** (`--allow-data-loss`, no waiting for replication). **RTO 12.90 s, client outage
+   5.18 s, 21 rows lost, RPO about 2.3 s.** Both targets met.
+
+   ![After the forced failover: West US is primary again](screenshots/sql-fog-after-forced-west-primary.png)
+
+   ![West server activity log showing the forced failover](screenshots/sql-activity-log-west.png)
+
+   ![Central server activity log](screenshots/sql-activity-log-central.png)
+
+   *The Central log includes four failed `Update SQL database` events (HTTP 404) from 16:44 to 16:47, while the
+   secondary was still being created. I saw only the status codes and did not investigate them.*
+
+**What to take from it, and what not to:**
+
+- The replication lag read **0 s** just before the forced failover, yet **21 acknowledged rows were lost.** Lag 0 does not
+  mean no loss. My explanation (writes in the last seconds before the switch had not reached the secondary) is a
+  **hypothesis I did not test.**
+- **This is a simulation, not a real outage:** the old primary was healthy when the failover was forced.
+- **DNS is inside the numbers:** the listener's DNS TTL is 30 s and the client caches DNS, so the RTO is "as seen from a
+  client". Two of the planned failover's errors were the client reaching the old primary, now read-only, through a stale
+  DNS answer.
+- **The measurement tool failed twice before it worked** (the driver's timeouts do not fire when a failover drops a
+  connection; a watchdog thread was not enough; a separate killable worker process was). All three logs are kept in
+  `docs/evidence/`. The planned failover was re-measured only because of those defects; the forced failover, which carries
+  the targets, was run once with a working tool.
+- **West US and Central US are not a Microsoft pair,** and Microsoft advises paired regions for failover groups, so a
+  worse RPO here could reflect that.
+
+**Teardown:** delete the failover group, remove the leftover geo-replication link (it refused until the link left
+`SUSPENDED`, about 10 minutes after the forced failover), then `terraform destroy`; verified with direct requests
+(both servers `ResourceNotFound`, 0 SQL servers in the subscription, empty state).
 
 ---
 
 ## Every resource created
 
-> **All of the resources below were deleted on 2026-09-25 (Step 13) and verified gone.** They are listed as a
-> record of what was built and why.
+> **The ASR lab's resources below were deleted on 2026-09-25 (Step 13), and the SQL lab's on 2026-09-26 (Step 14).
+> Both were verified gone.** They are listed as a record of what was built and why.
 
 **By Terraform, 21 resources (all in `terraform/asr-lab`):**
 
@@ -508,8 +585,24 @@ West US and Central US on this subscription, which is one reason those regions w
 | `heartbeat.service` and `/usr/local/bin/heartbeat.sh` on the VM | Step 8 |
 | Kernel `6.14.0-1017-azure` installed and set as the GRUB default on the VM | Step 7, applied by hand to the live canary |
 
-**Deliberately not touched:** the subscription's older resource groups (`DevSevOps`, `rg-cloudapiworkflow`) and
-their contents.
+**SQL lab: by Terraform, 9 resources (all in `terraform/sql-lab`):**
+
+| Resource | Region | Purpose |
+|---|---|---|
+| SQL server `sql-drdrill-w-<suffix>` | West US | Primary logical server |
+| SQL server `sql-drdrill-c-<suffix>` | Central US | Secondary logical server |
+| Database `drilldb` (Standard S0) | West US | The replicated database |
+| Failover group `fog-drdrill-<suffix>` (Manual policy) | across both | Replication plus the read-write listener |
+| 2 firewall rules | both servers | Allow only the writer's IP |
+| `random_password`, `local_sensitive_file` | local | Generated admin password, gitignored, never printed |
+| `random_string` | local | Suffix for the globally unique server and group names |
+
+**SQL lab: created by the failover group, not by Terraform:** the geo-secondary `drilldb` in Central US, removed at teardown
+along with its replication link.
+
+**Deliberately not touched (until 2026-09-26):** the subscription's older resource groups (`DevSevOps`,
+`rg-cloudapiworkflow`) and their contents. On 2026-09-26 the leftover Key Vault, storage account and Defender connector in
+them were deleted at the owner's request to reach a $0 run rate, and Defender CSPM was set back to Free.
 
 ---
 
@@ -531,6 +624,10 @@ their contents.
 | **RPO missed by 4 s** | Recovery point 5 min old; latest-changes sync step skipped | Hypothesis: source shutdown `Required`; untested |
 | **Teardown failed: ASR error 150144** | Disabling replication needs the *source* VM running (ASR removes its agent from inside it); I had left it deallocated after the drill | Start the source VM, wait for the agent, re-plan and destroy again. Add "start the source VM" to any future teardown |
 | The vault still listed after it was deleted | Azure's resource list index lags behind deletions | A direct request returned *Not Found*; verify with a direct request, not the list |
+| **SQL writer froze during the first planned failover** | The database driver's own timeouts did not fire when the failover dropped the connection | No timing from that run (0 rows lost still verified). Added a thread watchdog |
+| **SQL writer never reconnected (4+ minutes)** | The thread watchdog logged failures, but the driver stayed stuck, although a fresh process connected instantly. Hypothesis: an abandoned stuck call blocks later connections in the same process | Rebuilt the writer as a supervisor plus a killable worker process; it survived both failovers |
+| My analysis reported a 615 s outage for a 6.7 s failover | The log held both failovers and the analyzer counted them together | Added an `--until` option and regenerated; the earlier correct figure matched |
+| Removing the replication link failed at teardown | The database was still recovering after the forced failover (`SUSPENDED`) | Polled until it left `SUSPENDED` (about 10 minutes), then retried |
 
 ---
 
@@ -571,6 +668,10 @@ How to read that number honestly:
   say, so I make no claim.
 - **Late-posting usage could add a little.** The trial credit shows $199.63 remaining as of the read.
 
+**SQL drill:** about 57 minutes of two Standard S0 databases (roughly $0.02 per hour each at published prices), so
+**about $0.04 as an estimate from published prices, not from billing data.** Servers, firewall rules and the failover
+group have no charge of their own. The real figure was not yet available when this was written.
+
 ---
 
 ## Reproduce it
@@ -590,6 +691,11 @@ Step 1 first); ASR's agent may not support the newest Ubuntu kernel (check the s
 `Azure/Azure-SiteRecovery`); and enabling replication is slow (about 10 minutes for the enable job plus the
 initial copy). The failover calls are REST requests shown in Steps 9 and 11.
 
+**The SQL drill** (`terraform/sql-lab`): put your subscription ID and your public IP in `terraform.tfvars` (both stay
+gitignored), `terraform apply`, then `python writer.py init --host <listener>` and `python writer.py write --host <listener>`
+(needs `pip install pymssql`), run the failovers with `az sql failover-group set-primary` (add `--allow-data-loss` for the
+forced one, and run it against the server that should become primary), and compute the numbers with `analyze.py`.
+
 Local state is used on purpose: this is a single-operator lab torn down after each session.
 
 **Tearing down:** delete anything ASR created by hand first (a recovered VM, its NIC and disk), **make sure the
@@ -606,7 +712,12 @@ source VM is running** (ASR cannot disable replication on a deallocated VM, Step
 - **The RTO was measured from the VM's log,** not by the runbook's external health checks (Step 12).
 - **The RPO target was missed,** and the cause is a hypothesis, not a finding.
 - **The cloud-init kernel pin is untested on a fresh build.**
-- **No Azure SQL results exist yet.**
+- **The SQL drill is one forced failover and one planned failover on one small database,** about 10 tiny inserts per second.
+  Not a benchmark, and not a real outage.
+- **The SQL RTO is a client-side number** that includes DNS caching and the writer's own 3 s timeout. Its RTO definition was
+  refined after the fact (disclosed in the results file).
+- **The cause of the lost rows is a hypothesis.** The lag counter read 0 s before the forced failover, yet 21 rows were lost.
+- **The SQL drill's cost is an estimate,** not billing data.
 - **The cost figure is a billing-account total** ($0.37 for September), not a per-resource breakdown, and part of
   it ("Other purchases", $0.04) is unidentified.
 - **The recovery side has no explicit outbound path,** which a production DR design would add.
@@ -618,10 +729,13 @@ source VM is running** (ASR cannot disable replication on a deallocated VM, Step
 ```
 azure-dr-drill/
 ├── README.md                          you are here
-├── terraform/asr-lab/                 the 21 resources (network.tf, compute.tf, asr.tf, variables.tf, outputs.tf)
+├── terraform/asr-lab/                 the 21 ASR resources (network.tf, compute.tf, asr.tf, variables.tf, outputs.tf)
+├── terraform/sql-lab/                 the 9 SQL resources, plus writer.py (write load) and analyze.py (the numbers)
 ├── docs/
 │   ├── asr-drill-001-results.md       timeline, derivation, caveats, cause analysis
-│   └── runbooks/asr-drill.md          the procedure and the pre-committed RTO/RPO targets, plus post-drill notes
+│   ├── sql-drill-001-results.md       SQL results, the three writer runs, caveats
+│   ├── evidence/                      raw writer logs (including the two failed runs) and the computed analysis
+│   └── runbooks/                      asr-drill.md and sql-failover-drill.md: procedures and pre-committed targets
 └── screenshots/                       the images used above, IDs and IPs redacted
 ```
 
